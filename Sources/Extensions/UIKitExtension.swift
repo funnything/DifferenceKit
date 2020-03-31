@@ -19,6 +19,7 @@ public extension UITableView {
         using stagedChangeset: StagedChangeset<C>,
         with animation: @autoclosure () -> RowAnimation,
         interrupt: ((Changeset<C>) -> Bool)? = nil,
+        completion: ((Bool) -> Void)? = nil,
         setData: (C) -> Void
         ) {
         reload(
@@ -30,6 +31,7 @@ public extension UITableView {
             insertRowsAnimation: animation(),
             reloadRowsAnimation: animation(),
             interrupt: interrupt,
+            completion: completion,
             setData: setData
         )
     }
@@ -61,20 +63,23 @@ public extension UITableView {
         insertRowsAnimation: @autoclosure () -> RowAnimation,
         reloadRowsAnimation: @autoclosure () -> RowAnimation,
         interrupt: ((Changeset<C>) -> Bool)? = nil,
+        completion: ((Bool) -> Void)? = nil,
         setData: (C) -> Void
         ) {
         if case .none = window, let data = stagedChangeset.last?.data {
             setData(data)
+            completion?(true)
             return reloadData()
         }
 
-        for changeset in stagedChangeset {
+        for (idx, changeset) in stagedChangeset.enumerated() {
             if let interrupt = interrupt, interrupt(changeset), let data = stagedChangeset.last?.data {
                 setData(data)
+                completion?(true)
                 return reloadData()
             }
 
-            _performBatchUpdates {
+            _performBatchUpdates({
                 setData(changeset.data)
 
                 if !changeset.sectionDeleted.isEmpty {
@@ -108,18 +113,20 @@ public extension UITableView {
                 for (source, target) in changeset.elementMoved {
                     moveRow(at: IndexPath(row: source.element, section: source.section), to: IndexPath(row: target.element, section: target.section))
                 }
-            }
+            }, completion: idx == stagedChangeset.count - 1 ? completion : nil)
         }
     }
 
-    private func _performBatchUpdates(_ updates: () -> Void) {
+    private func _performBatchUpdates(_ updates: () -> Void, completion: ((Bool) -> Void)? = nil) {
         if #available(iOS 11.0, tvOS 11.0, *) {
-            performBatchUpdates(updates)
+            performBatchUpdates(updates, completion: completion)
         }
         else {
             beginUpdates()
             updates()
             endUpdates()
+            // quick-fix. Should use CATransaction.setCompletionBlock
+            completion?(true)
         }
     }
 }
